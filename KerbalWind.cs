@@ -1,15 +1,35 @@
-/* Needed something simpler than KerbalWeatherSystem. Originally based on some code from KerbalWeatherSystem. Now there is not much left of it ...
+/*---------------------------------------------------------------------------
+Needed something simpler than KerbalWeatherSystem. Originally based on some 
+code from KerbalWeatherSystem (KWS). I made sure to remove all of the original 
+code in order to not violate KWS copyright.
    
-   Author: DaMichel. KerbalWeatherSystem by silverfox8124.
+Author: DaMichel. KerbalWeatherSystem by silverfox8124.
    
-   License: GNU GPL. http://www.gnu.org/licenses/
-*/
+License: MIT
+-----------------------------------------------------------------------------
+Copyright (c) 2015 DaMichel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+-----------------------------------------------------------------------------*/
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Reflection;
+using System.ComponentModel;
 using UnityEngine;
 using KSP.IO;
 using ferram4;
@@ -22,6 +42,21 @@ namespace KerbalWind
         public static Vector3 x = Vector3.right;
         public static Vector3 y = Vector3.up;
         public static Vector3 z = Vector3.forward;
+        public static void TryReadValue<T>(ref T target, ConfigNode node, string name)
+        {
+            if (node.HasValue(name))
+            {
+                try
+                {
+                    target = (T)TypeDescriptor.GetConverter(typeof(T)).ConvertFromString(node.GetValue(name));
+                }
+                catch
+                {
+                    // just skip over it
+                }
+            }
+            // skip again
+        }
     }
 
 
@@ -29,22 +64,22 @@ namespace KerbalWind
     public class KerbalWind : MonoBehaviour
     {
         // main window
-        static Rect MainGUI = new Rect(100,100,-1,-1);
-        bool        isWindowOpen = true; //Value for GUI window open
+        Rect        windowRect = new Rect(100,100,-1,-1);
+        bool        isWindowOpen = true;
         bool        enableThroughGuiEvent = true;
         bool        enableThroughToolbar = true;
         // gui stuff
         const int   DIRECTION_DIAL_NO_WIND = 4;
-        int         windDirectionNumb = DIRECTION_DIAL_NO_WIND;
-        float       windSpeed = 0.0f;
-        String      windSpeedLabel = "";
+        int         windDirectionId = DIRECTION_DIAL_NO_WIND;
+        float       windSpd = 0.0f;
+        String      windSpdLabel = "";
         bool        needsUpdate = true;
         GUISkin     skin;
         // toolbar support
         IButton toolbarButton;
         // wind
-        Vector3 windDirectionWS; // final wind direction and magnitude in world space
-        Vector3 windDirection; // wind in "map" space, y = north, x = east (?)
+        Vector3 windVectorWS; // final wind direction and magnitude in world space
+        Vector3 windVector; // wind in "map" space, y = north, x = east (?)
         // book keeping data
         NavBall navball;
         Quaternion qVessel; // orientation of the vessel relative to world space
@@ -52,18 +87,13 @@ namespace KerbalWind
         Quaternion qfix = Quaternion.Euler(new Vector3(-90f, 0f, 0f)); // see below
 
 #region boring stuff
-        /* Called after the scene is loaded. */
         void Awake()
         {
-            Debug.Log("WIND: setting wind function"); //Write to debug
-            FARWind.SetWindFunction(GetWind); //Set the WindFunction to the windStuff Function
-
             skin = (GUISkin)GUISkin.Instantiate(HighLogic.Skin);
             skin.button.padding = new RectOffset(2, 2, 2, 2);
             skin.button.margin = new RectOffset(1, 1, 1, 1);
             skin.box.padding = new RectOffset(2, 2, 2, 2);
             skin.box.margin = new RectOffset(1, 1, 1, 1);
-            //skin.window.padding = new RectOffset(2, 2, 2, 2);
 
             if (ToolbarManager.ToolbarAvailable)
             {
@@ -81,7 +111,9 @@ namespace KerbalWind
             GameEvents.onHideUI.Add(OnHideUI);
             GameEvents.onShowUI.Add(OnShowUI);
 
-            Load();
+            FARWind.SetWindFunction(WindReturnCallback);
+
+            LoadSettings();
         }
 
 
@@ -92,8 +124,8 @@ namespace KerbalWind
 
             if (toolbarButton != null)
                 toolbarButton.Destroy();
-            
-            Save();
+
+            SaveSettings();
         }
 
 
@@ -111,19 +143,34 @@ namespace KerbalWind
         }
 
 
-        public void Save()
+        void SaveSettings()
         {
-            PluginConfiguration config = PluginConfiguration.CreateForType<KerbalWind>();
-            config.SetValue("Window Position", MainGUI);
-            config.save();
+            ConfigNode settings = new ConfigNode();
+            settings.name = "KERBAL_WIND_SETTINGS";
+            settings.AddValue("windowRect.xMin", windowRect.xMin);
+            settings.AddValue("windowRect.yMin", windowRect.yMin);
+            settings.AddValue("enableThroughToolbar", enableThroughToolbar);
+            settings.AddValue("windDirectionId", windDirectionId);
+            settings.AddValue("windSpd", windSpd);
+            settings.Save(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
         }
 
 
-        public void Load()
+        void LoadSettings()
         {
-            PluginConfiguration config = PluginConfiguration.CreateForType<KerbalWind>();
-            config.load();
-            MainGUI = config.GetValue<Rect>("Window Position");
+            ConfigNode settings = new ConfigNode();
+            settings = ConfigNode.Load(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
+            if (settings != null)
+            {
+                float x = windowRect.xMin, y = windowRect.yMin; // making structs immutable sure was a good idea ...
+                Util.TryReadValue(ref x, settings, "windowRect.xMin");
+                Util.TryReadValue(ref y, settings, "windowRect.xMin");
+                windowRect = new Rect(x, y, windowRect.width, windowRect.height); // it's so much safer and reduces the amount of awkward code one has to write ... 
+                Util.TryReadValue(ref enableThroughToolbar, settings, "enableThroughToolbar");
+                isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
+                Util.TryReadValue(ref windDirectionId, settings, "windDirectionId");
+                Util.TryReadValue(ref windSpd, settings, "windSpd");
+            }
         }
 #endregion
 
@@ -178,63 +225,61 @@ namespace KerbalWind
             return true;
         }
 
-        
-        /* Called at a fixed time interval determined by the physics time step. */
+
         void FixedUpdate()
         {
             if (!HighLogic.LoadedSceneIsFlight)
                 return;
-            if (windDirection != Vector3.zero)
+            if (windVector != Vector3.zero)
             {
                 UpdateCoordinateFrame();
-                windDirectionWS = qSurfaceToWorld * windDirection;
+                windVectorWS = qSurfaceToWorld * windVector;
             }
             else
-                windDirectionWS = Vector3.zero;
+                windVectorWS = Vector3.zero;
         }
 
 
         //Called by FAR. Returns wind vector.
-        public Vector3 GetWind(CelestialBody body, Part part, Vector3 position)
+        public Vector3 WindReturnCallback(CelestialBody body, Part part, Vector3 position)
         {
-            return windDirectionWS;
+            return windVectorWS;
         }
 
 
-        //Called when the GUI things happen
         void OnGUI()
         {
             if (isWindowOpen)
             {
                 GUI.skin = this.skin;
-                MainGUI = GUILayout.Window(10, MainGUI, OnWindow, 
-                                               windDirectionNumb==DIRECTION_DIAL_NO_WIND ? "No Wind" : "Wind");
+                windowRect = GUILayout.Window(10, windowRect, MakeMainWindow, 
+                                                  windDirectionId==DIRECTION_DIAL_NO_WIND ? "No Wind" : "Wind");
             }
         }
 
 
-        void OnWindow(int windowId)
+        void MakeMainWindow(int id)
         {
             GUILayout.BeginVertical();
                 GUILayout.BeginHorizontal();
                     if (GUILayout.Button("-", GUILayout.MinWidth(20))) //Turns down wind speed
                     {
                         needsUpdate = true;
-                        windSpeed = Mathf.Max(0.0f, windSpeed - 1.0f);
+                        windSpd = Mathf.Max(0.0f, windSpd - 1.0f);
                     }
                     if (GUILayout.Button("+", GUILayout.MinWidth(20))) //Turns up wind speed
                     {
-                        windSpeed += 1.0f;
+                        windSpd += 1.0f;
                         needsUpdate = true;
                     }
-                    GUILayout.Box(windSpeedLabel, GUILayout.MinWidth(80));
+                    GUILayout.Box(windSpdLabel, GUILayout.MinWidth(80));
                 GUILayout.EndHorizontal();
 
                 // make a 3x3 button grid
-                int oldWindDirectionNumb = windDirectionNumb;
+                int oldWindDirectionNumb = windDirectionId;
                 string[] selStrings = new String[] {"", "N", "", "W", "X", "E", "", "S", ""};
-                windDirectionNumb = GUILayout.SelectionGrid(windDirectionNumb, selStrings, 3);
-                if (windDirectionNumb != oldWindDirectionNumb) 
+                windDirectionId = GUILayout.SelectionGrid(windDirectionId, selStrings, 3);
+                if (windDirectionId != oldWindDirectionNumb) 
                 {
                     needsUpdate = true;
                 }
@@ -243,74 +288,43 @@ namespace KerbalWind
                 {
                     // X = east
                     // Z = north
-                    windDirection = Vector3.zero;
-                    switch (windDirectionNumb)
+                    windVector = Vector3.zero;
+                    switch (windDirectionId)
                     {
-                        case 7:
-                            //windDirectionLabel = "South";
-                            windDirection.z = windSpeed;
+                        case 7: // S
+                            windVector.z = windSpd;
                             break;
-                        case 3:
-                            //windDirectionLabel = "West";
-                            windDirection.x = windSpeed;
+                        case 3: // W
+                            windVector.x = windSpd;
                             break;
-                        case 1:
-                            //windDirectionLabel = "North";
-                            windDirection.z = -windSpeed;
+                        case 1: // N
+                            windVector.z = -windSpd;
                             break;
-                        case 5:
-                            //windDirectionLabel = "East";
-                            windDirection.x = -windSpeed;
+                        case 5: // E
+                            windVector.x = -windSpd;
                             break;
-                        case 6:
-                            //windDirectionLabel = "South West";
-                            windDirection.x = windSpeed;
-                            windDirection.z = windSpeed;
+                        case 6: // SW
+                            windVector.x = windSpd;
+                            windVector.z = windSpd;
                             break;
-                        case 0:
-                            //windDirectionLabel = "North West";
-                            windDirection.x = windSpeed;
-                            windDirection.z = -windSpeed;
+                        case 0: // NW
+                            windVector.x = windSpd;
+                            windVector.z = -windSpd;
                             break;
-                        case 2:
-                            //windDirectionLabel = "North East";
-                            windDirection.x = -windSpeed;
-                            windDirection.z = -windSpeed;
+                        case 2: // NE
+                            windVector.x = -windSpd;
+                            windVector.z = -windSpd;
                             break;
-                        case 8:
-                            //windDirectionLabel = "South East";
-                            windDirection.x = -windSpeed;
-                            windDirection.z = windSpeed;
-                            break;
-                        default:
-                            //windDirectionLabel = "No Wind";
+                        case 8: // SE
+                            windVector.x = -windSpd;
+                            windVector.z = windSpd;
                             break;
                     }
-                    windSpeedLabel = windSpeed.ToString("F0") + " m/s";
+                    windSpdLabel = windSpd.ToString("F0") + " m/s";
                     needsUpdate = false;
                 }
-                //GUILayout.Label(windDirectionLabel);
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
-        
-#if false
-        /* Called every frame */
-        void Update()
-        {
-        }
-
-//Called when the drawing happens
-        private void OnDraw() 
-        {
-            
-        }
-
-        /* Called after Awake. */
-        void Start()
-        {
-            
-        }
-#endif
     }
 }

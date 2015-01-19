@@ -94,6 +94,8 @@ namespace KerbalWind
             FARWind.SetWindFunction(WindReturnCallback);
 
             LoadSettings();
+
+            ComputeWindVector();
         }
 
 
@@ -227,6 +229,46 @@ namespace KerbalWind
         }
 
 
+        void ComputeWindVector()
+        {
+            // X = east
+            // Z = north
+            windVector = Vector3.zero;
+            switch (windDirectionId)
+            {
+                case 7: // S
+                    windVector.z = windSpd;
+                    break;
+                case 3: // W
+                    windVector.x = windSpd;
+                    break;
+                case 1: // N
+                    windVector.z = -windSpd;
+                    break;
+                case 5: // E
+                    windVector.x = -windSpd;
+                    break;
+                case 6: // SW
+                    windVector.x = windSpd;
+                    windVector.z = windSpd;
+                    break;
+                case 0: // NW
+                    windVector.x = windSpd;
+                    windVector.z = -windSpd;
+                    break;
+                case 2: // NE
+                    windVector.x = -windSpd;
+                    windVector.z = -windSpd;
+                    break;
+                case 8: // SE
+                    windVector.x = -windSpd;
+                    windVector.z = windSpd;
+                    break;
+            }
+            windSpdLabel = windSpd.ToString("F0") + " m/s";
+        }
+
+
         void OnGUI()
         {
             if (isWindowOpen)
@@ -263,44 +305,9 @@ namespace KerbalWind
                 {
                     needsUpdate = true;
                 }
-
                 if (needsUpdate)
                 {
-                    // X = east
-                    // Z = north
-                    windVector = Vector3.zero;
-                    switch (windDirectionId)
-                    {
-                        case 7: // S
-                            windVector.z = windSpd;
-                            break;
-                        case 3: // W
-                            windVector.x = windSpd;
-                            break;
-                        case 1: // N
-                            windVector.z = -windSpd;
-                            break;
-                        case 5: // E
-                            windVector.x = -windSpd;
-                            break;
-                        case 6: // SW
-                            windVector.x = windSpd;
-                            windVector.z = windSpd;
-                            break;
-                        case 0: // NW
-                            windVector.x = windSpd;
-                            windVector.z = -windSpd;
-                            break;
-                        case 2: // NE
-                            windVector.x = -windSpd;
-                            windVector.z = -windSpd;
-                            break;
-                        case 8: // SE
-                            windVector.x = -windSpd;
-                            windVector.z = windSpd;
-                            break;
-                    }
-                    windSpdLabel = windSpd.ToString("F0") + " m/s";
+                    ComputeWindVector();
                     needsUpdate = false;
                 }
             GUILayout.EndVertical();

@@ -51,8 +51,9 @@ namespace KerbalWind
         // gui stuff
         const int   DIRECTION_DIAL_NO_WIND = 4;
         int         windDirectionId = DIRECTION_DIAL_NO_WIND;
-        float       windSpd = 0.0f;
-        String      windSpdLabel = "";
+        float       windSpdGuiState = 0.0f; // the value that is being increased when you hit the +/- buttons
+        string      windSpdLabel = "";
+        string      windDirLabel = "x";
         bool        needsUpdate = true;
         GUISkin     skin;
         // toolbar support
@@ -133,7 +134,7 @@ namespace KerbalWind
             settings.AddValue("windowRect.yMin", windowRect.yMin);
             settings.AddValue("enableThroughToolbar", enableThroughToolbar);
             settings.AddValue("windDirectionId", windDirectionId);
-            settings.AddValue("windSpd", windSpd);
+            settings.AddValue("windSpdGuiState", windSpdGuiState);
             settings.Save(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
         }
 
@@ -151,7 +152,7 @@ namespace KerbalWind
                 Util.TryReadValue(ref enableThroughToolbar, settings, "enableThroughToolbar");
                 isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
                 Util.TryReadValue(ref windDirectionId, settings, "windDirectionId");
-                Util.TryReadValue(ref windSpd, settings, "windSpd");
+                Util.TryReadValue(ref windSpdGuiState, settings, "windSpdGuiState");
             }
         }
 #endregion
@@ -234,38 +235,50 @@ namespace KerbalWind
             // X = east
             // Z = north
             windVector = Vector3.zero;
+            windDirLabel = "x";
             switch (windDirectionId)
             {
                 case 7: // S
-                    windVector.z = windSpd;
+                    windVector.z = -1;
+                    windDirLabel = "\u2193";
                     break;
                 case 3: // W
-                    windVector.x = windSpd;
+                    windVector.x = -1;
+                    windDirLabel = "\u2190";
                     break;
                 case 1: // N
-                    windVector.z = -windSpd;
+                    windVector.z = 1;
+                    windDirLabel = "\u2191";
                     break;
                 case 5: // E
-                    windVector.x = -windSpd;
+                    windVector.x = 1;
+                    windDirLabel = "\u2192";
                     break;
                 case 6: // SW
-                    windVector.x = windSpd;
-                    windVector.z = windSpd;
+                    windVector.x = -1;
+                    windVector.z = -1;
+                    windDirLabel = "\u2199";
                     break;
                 case 0: // NW
-                    windVector.x = windSpd;
-                    windVector.z = -windSpd;
+                    windVector.x = -1;
+                    windVector.z = 1;
+                    windDirLabel = "\u2196";
                     break;
                 case 2: // NE
-                    windVector.x = -windSpd;
-                    windVector.z = -windSpd;
+                    windVector.x = 1;
+                    windVector.z = 1;
+                    windDirLabel = "\u2197";
                     break;
                 case 8: // SE
-                    windVector.x = -windSpd;
-                    windVector.z = windSpd;
+                    windVector.x = 1;
+                    windVector.z = -1;
+                    windDirLabel = "\u2198";
                     break;
             }
-            windSpdLabel = windSpd.ToString("F0") + " m/s";
+            windVector.Normalize();
+            float windSpd = (float)(int)windSpdGuiState;
+            windVector *= windSpd;
+            windSpdLabel = windSpd.ToString("F1") + " m/s";
         }
 
 
@@ -284,14 +297,14 @@ namespace KerbalWind
         {
             GUILayout.BeginVertical();
                 GUILayout.BeginHorizontal();
-                    if (GUILayout.Button("-", GUILayout.MinWidth(20))) //Turns down wind speed
+                    if (GUILayout.RepeatButton("-", GUILayout.MinWidth(20))) //Turns down wind speed
                     {
                         needsUpdate = true;
-                        windSpd = Mathf.Max(0.0f, windSpd - 1.0f);
+                        windSpdGuiState = Mathf.Max(0.0f, windSpdGuiState - 0.1f);
                     }
-                    if (GUILayout.Button("+", GUILayout.MinWidth(20))) //Turns up wind speed
+                    if (GUILayout.RepeatButton("+", GUILayout.MinWidth(20))) //Turns up wind speed
                     {
-                        windSpd += 1.0f;
+                        windSpdGuiState += 0.1f;
                         needsUpdate = true;
                     }
                     GUILayout.Box(windSpdLabel, GUILayout.MinWidth(80));
@@ -299,7 +312,7 @@ namespace KerbalWind
 
                 // make a 3x3 button grid
                 int oldWindDirectionNumb = windDirectionId;
-                string[] selStrings = new String[] {"", "N", "", "W", "X", "E", "", "S", ""};
+                string[] selStrings = new String[] {"", "N", "", "W", windDirLabel, "E", "", "S", ""};
                 windDirectionId = GUILayout.SelectionGrid(windDirectionId, selStrings, 3);
                 if (windDirectionId != oldWindDirectionNumb) 
                 {

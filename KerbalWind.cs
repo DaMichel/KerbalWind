@@ -1,11 +1,32 @@
 /*---------------------------------------------------------------------------
-I (DaMichel) needed something simpler than KerbalWeatherSystem. Originally 
-based on code from KerbalWeatherSystem by silverfox8124.
+Adds wind to the game. It opens a dialog box where you can set wind direction and speed. 
+Inspired by KerbalWeatherSystem by silverfox8124. But this is much simpler, omitting the 
+actual weather simulation.
    
 Author: DaMichel, silverfox8124
    
-License: The following code is based off the work of SilverFox8124, and used 
-with permission under license of: All Right's Reserved, 2014(c)
+License: The code is subject to the MIT license (see below). In addition
+that creators of derivative work must give credit to silverfox8124 and DaMichel.
+------------------------------------------------
+Copyright (c) 2015 DaMichel, silverfox8124
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ---------------------------------------------------------------------------*/
 
 using System;
@@ -276,9 +297,9 @@ namespace KerbalWind
                     break;
             }
             windVector.Normalize();
-            float windSpd = (float)(int)windSpdGuiState;
+            float windSpd = (float)(int)windSpdGuiState; // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
             windVector *= windSpd;
-            windSpdLabel = windSpd.ToString("F1") + " m/s";
+            windSpdLabel = windSpd.ToString("F0") + " m/s";
         }
 
 

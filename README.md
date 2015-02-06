@@ -10,13 +10,12 @@ Optional mod: Toolbar
 
 Author: DaMichel, silverfox8124
 
-Credits: KerbalWind is based on the work of SilverFox8124. Used with permission. 
-Much thanks goes to SilverFox8124 for the idea and the head start due to his code,
-Ippo343 for writing the FAR patch that lets you add wind,
-and Ferram4 for making FAR and accepting all those patches.
+Credits: KerbalWind is based on the work of SilverFox8124. Used with permission.  Much thanks goes to SilverFox8124 for the idea and the head start due to his code, Ippo343 for writing the FAR patch that lets you add wind, and Ferram4 for making FAR and accepting all those patches.
 
-License: The code is subject to the MIT license (see below). In addition,
-the creators of derivative work must give credit to silverfox8124 and DaMichel.
+Forum Thread: http://forum.kerbalspaceprogram.com/threads/107989
+Source Code: https://github.com/DaMichel/KerbalWind
+
+License: The code is subject to the MIT license (see below). In addition, the creators of derivative work must give credit to silverfox8124 and DaMichel.
 
 -----------------------------------
 

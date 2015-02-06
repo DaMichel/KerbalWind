@@ -73,8 +73,10 @@ namespace KerbalWind
         const int   DIRECTION_DIAL_NO_WIND = 4;
         int         windDirectionId = DIRECTION_DIAL_NO_WIND;
         float       windSpdGuiState = 0.0f; // the value that is being increased when you hit the +/- buttons
+        float       windSpd = 0.0f;
         string      windSpdLabel = "";
         string      windDirLabel = "x";
+        string      windowTitle  = "";
         bool        needsUpdate = true;
         GUISkin     skin;
         // toolbar support
@@ -96,6 +98,8 @@ namespace KerbalWind
             skin.button.margin = new RectOffset(1, 1, 1, 1);
             skin.box.padding = new RectOffset(2, 2, 2, 2);
             skin.box.margin = new RectOffset(1, 1, 1, 1);
+            skin.textField.margin = new RectOffset(3,1,1,1);
+            skin.textField.padding = new RectOffset(4,2,1,0);
 
             if (ToolbarManager.ToolbarAvailable)
             {
@@ -175,6 +179,8 @@ namespace KerbalWind
                 Util.TryReadValue(ref windDirectionId, settings, "windDirectionId");
                 Util.TryReadValue(ref windSpdGuiState, settings, "windSpdGuiState");
             }
+            windSpd = (float)(int)windSpdGuiState; // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
+            windSpdLabel = windSpd.ToString("F0");
         }
 #endregion
 
@@ -257,49 +263,61 @@ namespace KerbalWind
             // Z = north
             windVector = Vector3.zero;
             windDirLabel = "x";
+            string dirLabel2 = "";
             switch (windDirectionId)
             {
                 case 7: // S
                     windVector.z = -1;
                     windDirLabel = "\u2193";
+                    dirLabel2  = "N";
                     break;
                 case 3: // W
                     windVector.x = -1;
                     windDirLabel = "\u2190";
+                    dirLabel2  = "E";
                     break;
                 case 1: // N
                     windVector.z = 1;
                     windDirLabel = "\u2191";
+                    dirLabel2 = "S";
                     break;
                 case 5: // E
                     windVector.x = 1;
                     windDirLabel = "\u2192";
+                    dirLabel2 = "W";
                     break;
                 case 6: // SW
                     windVector.x = -1;
                     windVector.z = -1;
                     windDirLabel = "\u2199";
+                    dirLabel2 = "NE";
                     break;
                 case 0: // NW
                     windVector.x = -1;
                     windVector.z = 1;
                     windDirLabel = "\u2196";
+                    dirLabel2 = "SE";
                     break;
                 case 2: // NE
                     windVector.x = 1;
                     windVector.z = 1;
                     windDirLabel = "\u2197";
+                    dirLabel2 = "SW";
                     break;
                 case 8: // SE
                     windVector.x = 1;
                     windVector.z = -1;
                     windDirLabel = "\u2198";
+                    dirLabel2 = "NW";
                     break;
             }
             windVector.Normalize();
-            float windSpd = (float)(int)windSpdGuiState; // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
             windVector *= windSpd;
-            windSpdLabel = windSpd.ToString("F0") + " m/s";
+            windSpd = (float)(int)windSpdGuiState; // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
+            if (windDirectionId==DIRECTION_DIAL_NO_WIND)
+                windowTitle = "No Wind";
+            else
+                windowTitle = windSpd.ToString("F0") + "m/s " + dirLabel2;
         }
 
 
@@ -308,8 +326,10 @@ namespace KerbalWind
             if (isWindowOpen)
             {
                 GUI.skin = this.skin;
-                windowRect = GUILayout.Window(10, windowRect, MakeMainWindow, 
-                                                  windDirectionId==DIRECTION_DIAL_NO_WIND ? "No Wind" : "Wind");
+                windowRect = GUILayout.Window(10, windowRect, MakeMainWindow, windowTitle);
+                float left = Mathf.Clamp(windowRect.x, 0, Screen.width-windowRect.width);
+                float top = Mathf.Clamp(windowRect.y, 0, Screen.height-windowRect.height);
+                windowRect = new Rect(left, top, windowRect.width, windowRect.height);
             }
         }
 
@@ -317,23 +337,11 @@ namespace KerbalWind
         void MakeMainWindow(int id)
         {
             GUILayout.BeginVertical();
-                GUILayout.BeginHorizontal();
-                    if (GUILayout.RepeatButton("-", GUILayout.MinWidth(20))) //Turns down wind speed
-                    {
-                        needsUpdate = true;
-                        windSpdGuiState = Mathf.Max(0.0f, windSpdGuiState - 0.1f);
-                    }
-                    if (GUILayout.RepeatButton("+", GUILayout.MinWidth(20))) //Turns up wind speed
-                    {
-                        windSpdGuiState += 0.1f;
-                        needsUpdate = true;
-                    }
-                    GUILayout.Box(windSpdLabel, GUILayout.MinWidth(80));
-                GUILayout.EndHorizontal();
-
                 // make a 3x3 button grid
                 int oldWindDirectionNumb = windDirectionId;
-                string[] selStrings = new String[] {"", "N", "", "W", windDirLabel, "E", "", "S", ""};
+                //string[] selStrings = new String[] {"", "N", "", "W", windDirLabel, "E", "", "S", ""};
+                string[] selStrings = new String[] {"", "", "", "", windDirLabel, "", "", "", ""};
+                selStrings[windDirectionId] = windDirLabel;
                 windDirectionId = GUILayout.SelectionGrid(windDirectionId, selStrings, 3);
                 if (windDirectionId != oldWindDirectionNumb) 
                 {
@@ -344,6 +352,32 @@ namespace KerbalWind
                     ComputeWindVector();
                     needsUpdate = false;
                 }
+                GUILayout.Space(4);
+                GUILayout.BeginHorizontal();
+                    string windSpdLabelNew = GUILayout.TextField(windSpdLabel, GUILayout.MinWidth(40));
+                    if (windSpdLabel != windSpdLabelNew)
+                    {
+                        float newWindSpd;
+                        if (float.TryParse(windSpdLabelNew, out newWindSpd))
+                        {
+                            windSpdGuiState = newWindSpd;
+                            needsUpdate = true;
+                        }
+                        windSpdLabel = windSpdLabelNew;
+                    }
+                    bool hitMinusButton = GUILayout.RepeatButton("-", GUILayout.MinWidth(20)); //Turns down wind speed
+                    bool hitPlusButton  = GUILayout.RepeatButton("+", GUILayout.MinWidth(20)); //Turns up wind speed
+                    if (hitPlusButton || hitMinusButton)
+                    {
+                        if (hitMinusButton)
+                            windSpdGuiState = Mathf.Max(0.0f, windSpdGuiState - 0.1f);
+                        else
+                            windSpdGuiState += 0.1f;
+                        windSpdLabel = windSpd.ToString("F0");
+                        needsUpdate = true;
+                    }
+                    //GUILayout.Label("m/s", GUILayout.ExpandWidth(true));
+                GUILayout.EndHorizontal();
             GUILayout.EndVertical();
             GUI.DragWindow();
         }

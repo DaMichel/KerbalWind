@@ -33,7 +33,7 @@ using System;
 using System.ComponentModel;
 using UnityEngine;
 using KSP.IO;
-using ferram4;
+using FerramAerospaceResearch;
 
 
 namespace KerbalWind

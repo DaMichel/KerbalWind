@@ -33,7 +33,7 @@ using System;
 using System.ComponentModel;
 using UnityEngine;
 using KSP.IO;
-using FerramAerospaceResearch;
+using System.Reflection;
 
 
 namespace KerbalWind
@@ -59,7 +59,6 @@ namespace KerbalWind
             // skip again
         }
     }
-
 
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class KerbalWind : MonoBehaviour
@@ -90,6 +89,57 @@ namespace KerbalWind
         Quaternion qSurfaceToWorld; // orientation of the planet surface under the vessel in world space
         Quaternion qfix = Quaternion.Euler(new Vector3(-90f, 0f, 0f)); // see below
 
+        bool RegisterWithFAR()
+        {
+            try
+            {
+                Type FARWind = null;
+                Type WindFunction = null;
+                foreach (var assembly in AssemblyLoader.loadedAssemblies)
+                {
+                    if (assembly.name == "FerramAerospaceResearch")
+                    {
+                        var types = assembly.assembly.GetExportedTypes();
+                        foreach (Type t in types)
+                        {
+                            if (t.FullName.Equals("FerramAerospaceResearch.FARWind"))
+                            {
+                                FARWind = t;
+                            }
+                            if (t.FullName.Equals("FerramAerospaceResearch.FARWind+WindFunction"))
+                            {
+                                WindFunction = t;
+                            }
+                        }
+                    }
+                }
+                if (FARWind == null)
+                {
+                    Debug.LogError("KerbalWind: unable to find FerramAerospaceResearch.FARWind");
+                    return false;
+                }
+                if (WindFunction == null)
+                {
+                    Debug.LogError("KerbalWind: unable to find FerramAerospaceResearch.FARWind+WindFunction");
+                    return false;
+                }
+                MethodInfo SetWindFunction = FARWind.GetMethod("SetWindFunction");
+                if (SetWindFunction == null)
+                {
+                    Debug.LogError("KerbalWind: unable to find FARWind.SetWindFunction");
+                    return false;
+                }
+                var del = Delegate.CreateDelegate(WindFunction, this, typeof(KerbalWind).GetMethod("GetTheWind"), true);
+                SetWindFunction.Invoke(null, new object[] { del });
+                return true; // jump out!
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("KerbalWind: unable to register with FerramAerospaceResearch. Exception thrown: "+e.ToString());
+            }
+            return false;
+        }
+
 #region boring stuff
         void Awake()
         {
@@ -117,7 +167,10 @@ namespace KerbalWind
             GameEvents.onHideUI.Add(OnHideUI);
             GameEvents.onShowUI.Add(OnShowUI);
 
-            FARWind.SetWindFunction(WindReturnCallback);
+            if (!RegisterWithFAR())
+            {
+                this.enabled = false;
+            }
 
             LoadSettings();
 
@@ -251,7 +304,7 @@ namespace KerbalWind
 
 
         //Called by FAR. Returns wind vector.
-        public Vector3 WindReturnCallback(CelestialBody body, Part part, Vector3 position)
+        public Vector3 GetTheWind(CelestialBody body, Part part, Vector3 position)
         {
             return windVectorWS;
         }

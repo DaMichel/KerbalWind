@@ -31,6 +31,7 @@ THE SOFTWARE.
 
 using System;
 using System.ComponentModel;
+using System.Text;
 using UnityEngine;
 using KSP.IO;
 using System.Reflection;
@@ -84,9 +85,8 @@ namespace KerbalWind
         Vector3 windVectorWS; // final wind direction and magnitude in world space
         Vector3 windVector; // wind in "map" space, y = north, x = east (?)
         // book keeping data
-        NavBall navball;
         Quaternion qVessel; // orientation of the vessel relative to world space
-        Quaternion qSurfaceToWorld; // orientation of the planet surface under the vessel in world space
+        Matrix4x4  mSurfaceToWorld = Matrix4x4.identity; // orientation of the planet surface under the vessel in world space
         Quaternion qfix = Quaternion.Euler(new Vector3(-90f, 0f, 0f)); // see below
 
         bool RegisterWithFAR()
@@ -239,49 +239,58 @@ namespace KerbalWind
 
         bool UpdateCoordinateFrame()
         {
-            if (navball == null)
-                navball = FlightUIController.fetch.GetComponentInChildren<NavBall>();
-            if (navball == null)
-                return false;
-
             Vessel vessel = FlightGlobals.ActiveVessel;
             if (vessel == null) return false;
-            if (vessel.ReferenceTransform != null)
-            {
-                qVessel = vessel.ReferenceTransform.rotation;
-            }
-            else
-            {
-                qVessel = vessel.transform.rotation;
-            }
-            /* Lets use the navball to get the surface orientation.
-               This is a bit obscure. But in principle the navball contains the orientation of 
-               the surface relative to the vessel. So we can chain the transforms 
-               (vessel->world)*(surface->vessel). "world" is a pretty much arbitrary reference 
-               frame. Vessel position is given relative to this frame and wind is also expected
-               to be given in this frame.
-            */
-            qSurfaceToWorld = qVessel * qfix * navball.relativeGymbal;
+            Vector3 east = vessel.east;
+            Vector3 north = vessel.north;
+            Vector3 up   = vessel.upAxis;
+            mSurfaceToWorld[0,2] = east.x;
+            mSurfaceToWorld[1,2] = east.y;
+            mSurfaceToWorld[2,2] = east.z;
+            mSurfaceToWorld[0,1] = up.x;
+            mSurfaceToWorld[1,1] = up.y;
+            mSurfaceToWorld[2,1] = up.z;
+            mSurfaceToWorld[0,0] = north.x;
+            mSurfaceToWorld[1,0] = north.y;
+            mSurfaceToWorld[2,0] = north.z;
 
 #if DEBUG
             if (Input.GetKeyDown(KeyCode.O))
             {
+                if (vessel.ReferenceTransform != null)
+                {
+                    qVessel = vessel.ReferenceTransform.rotation;
+                }
+                else
+                {
+                    qVessel = vessel.transform.rotation;
+                }
                 Vector3 vx = qVessel * Util.x; // sideways
-                Vector3 vy = qVessel * Util.y; // the longitudinal axis for a plane
-                Vector3 vz = qVessel * Util.z; // down for a plane (?)
-                Vector3 sx = qSurfaceToWorld * Util.x;
-                Vector3 sy = qSurfaceToWorld * Util.y;
-                Vector3 sz = qSurfaceToWorld * Util.z;
+                Vector3 vy = qVessel * Util.y; // the longitudinal axis
+                Vector3 vz = qVessel * Util.z; // down for a plane
+                Vector3 sx = mSurfaceToWorld.GetColumn(0);
+                Vector3 sy = mSurfaceToWorld.GetColumn(1);
+                Vector3 sz = mSurfaceToWorld.GetColumn(2);
+                float xdoty = Vector3.Dot(sx, sy);
+                float xdotz = Vector3.Dot(sx, sz);
+                float ydotz = Vector3.Dot(sy, sz);
                 StringBuilder sb = new StringBuilder(8);
                 sb.AppendLine("KerbalWind:");
                 sb.AppendLine("       vx = " + vx.ToString("F2"));
                 sb.AppendLine("       vy = " + vy.ToString("F2"));
                 sb.AppendLine("       vz = " + vz.ToString("F2"));
-                sb.AppendLine("       sx = " + sx.ToString("F2")); // probably vertical, pointing down?
-                sb.AppendLine("       sy = " + sy.ToString("F2")); // probably east
-                sb.AppendLine("       sz = " + sz.ToString("F2")); // probably north
-                sb.AppendLine("       vy*wind = " + (Vector3.Dot(vy,windDirectionWS)/windSpeed).ToString("F2"));
-                sb.AppendLine("       vz*wind = " + (Vector3.Dot(vz,windDirectionWS)/windSpeed).ToString("F2"));
+                sb.AppendLine("       sx = " + sx.ToString("F2"));
+                sb.AppendLine("       sy = " + sy.ToString("F2")); // up
+                sb.AppendLine("       sz = " + sz.ToString("F2"));
+                sb.AppendLine("       xdoty = " + xdoty.ToString("F2"));
+                sb.AppendLine("       xdotz = " + xdotz.ToString("F2"));
+                sb.AppendLine("       ydotz = " + ydotz.ToString("F2"));
+                sb.AppendLine("ship_upAxis             = "+((Vector3)FlightGlobals.ship_upAxis).ToString("F3"));
+                sb.AppendLine("upAxis                  = "+((Vector3)FlightGlobals.upAxis).ToString("F3"));
+                sb.AppendLine("getUpAxis               = "+((Vector3)FlightGlobals.getUpAxis()).ToString("F3"));
+                sb.AppendLine("vessel.upAxis           = "+((Vector3)vessel.upAxis).ToString("F3"));
+                //sb.AppendLine("       vy*wind = " + (Vector3.Dot(vy,windDirectionWS)/windSpeed).ToString("F2"));
+                //sb.AppendLine("       vz*wind = " + (Vector3.Dot(vz,windDirectionWS)/windSpeed).ToString("F2"));
                 Debug.Log(sb.ToString());
             }
 #endif
@@ -296,7 +305,7 @@ namespace KerbalWind
             if (windVector != Vector3.zero)
             {
                 UpdateCoordinateFrame();
-                windVectorWS = qSurfaceToWorld * windVector;
+                windVectorWS = mSurfaceToWorld * windVector;
             }
             else
                 windVectorWS = Vector3.zero;
@@ -312,54 +321,54 @@ namespace KerbalWind
 
         void ComputeWindVector()
         {
-            // X = east
-            // Z = north
+            // X = north, consistent with vessel axes where x points north for vessels on the KSC runway pointing east
+            // Z = east
             windVector = Vector3.zero;
             windDirLabel = "x";
             string dirLabel2 = "";
             switch (windDirectionId)
             {
                 case 7: // S
-                    windVector.z = -1;
+                    windVector.x = -1;
                     windDirLabel = "\u2193";
                     dirLabel2  = "N";
                     break;
                 case 3: // W
-                    windVector.x = -1;
+                    windVector.z = -1;
                     windDirLabel = "\u2190";
                     dirLabel2  = "E";
                     break;
                 case 1: // N
-                    windVector.z = 1;
+                    windVector.x = 1;
                     windDirLabel = "\u2191";
                     dirLabel2 = "S";
                     break;
                 case 5: // E
-                    windVector.x = 1;
+                    windVector.z = 1;
                     windDirLabel = "\u2192";
                     dirLabel2 = "W";
                     break;
                 case 6: // SW
-                    windVector.x = -1;
                     windVector.z = -1;
+                    windVector.x = -1;
                     windDirLabel = "\u2199";
                     dirLabel2 = "NE";
                     break;
                 case 0: // NW
-                    windVector.x = -1;
-                    windVector.z = 1;
+                    windVector.z = -1;
+                    windVector.x = 1;
                     windDirLabel = "\u2196";
                     dirLabel2 = "SE";
                     break;
                 case 2: // NE
-                    windVector.x = 1;
                     windVector.z = 1;
+                    windVector.x = 1;
                     windDirLabel = "\u2197";
                     dirLabel2 = "SW";
                     break;
                 case 8: // SE
-                    windVector.x = 1;
-                    windVector.z = -1;
+                    windVector.z = 1;
+                    windVector.x = -1;
                     windDirLabel = "\u2198";
                     dirLabel2 = "NW";
                     break;

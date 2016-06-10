@@ -60,6 +60,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="KerbalWind.cs" />
+    <Compile Include="ToolbarSuperWrapper.cs" />
     <Compile Include="ToolbarWrapper.cs" />
   </ItemGroup>
   <ItemGroup>

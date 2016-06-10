@@ -230,13 +230,11 @@ namespace KerbalWind
 
 
     [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public class KerbalWind : MonoBehaviour
+    public class KerbalWind : DaMichelToolbarSuperWrapper.PluginWithToolbarSupport
     {
         // main window
         Rect        windowRect = new Rect(100,100,-1,-1);
         bool        isWindowOpen = true;
-        bool        enableThroughGuiEvent = true;
-        bool        enableThroughToolbar = true;
         // gui stuff
         const int   DIRECTION_DIAL_NO_WIND = 4;
         int         windDirectionId = DIRECTION_DIAL_NO_WIND;
@@ -249,8 +247,6 @@ namespace KerbalWind
         string      gustsSeverityGuiLabel = "";
         bool        needsUpdate = true;
         GUISkin     skin;
-        // toolbar support
-        IButton toolbarButton;
         // wind
         Vector3 windVectorWS; // final wind direction and magnitude in world space
         Vector3 gustsVectorWS;
@@ -313,6 +309,17 @@ namespace KerbalWind
         }
 
 #region boring stuff
+        protected override DaMichelToolbarSuperWrapper.ToolbarInfo GetToolbarInfo()
+        {
+            return new DaMichelToolbarSuperWrapper.ToolbarInfo {
+                name = "KerbalWind",
+                tooltip = "KerbalWind Show/Hide Gui",
+                toolbarTexture = "KerbalWind/toolbarbutton",
+                launcherTexture = "KerbalWind/launcherbutton",
+                visibleInScenes = new GameScenes[] { GameScenes.FLIGHT }
+            };
+        }
+
         void Awake()
         {
             skin = (GUISkin)GUISkin.Instantiate(HighLogic.Skin);
@@ -323,28 +330,14 @@ namespace KerbalWind
             skin.textField.margin = new RectOffset(3,1,1,1);
             skin.textField.padding = new RectOffset(4,2,1,0);
 
-            if (ToolbarManager.ToolbarAvailable)
-            {
-                toolbarButton = ToolbarManager.Instance.add("KerbalWind", "KerbalWind");
-                toolbarButton.TexturePath = "KerbalWind/toolbarbutton";
-                toolbarButton.ToolTip = "KerbalWind Show/Hide";
-                toolbarButton.Visibility = new GameScenesVisibility(GameScenes.FLIGHT);
-                toolbarButton.Enabled = true;
-                toolbarButton.OnClick += (e) =>
-                {
-                    enableThroughToolbar = !enableThroughToolbar;
-                    isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
-                };
-            }
-            GameEvents.onHideUI.Add(OnHideUI);
-            GameEvents.onShowUI.Add(OnShowUI);
-
             if (!RegisterWithFAR())
             {
                 this.enabled = false;
             }
 
             LoadSettings();
+            InitializeToolbars();
+            OnGuiVisibilityChange();
 
             gustsmodel.Init(0f);
             ComputeWindVector();
@@ -353,27 +346,14 @@ namespace KerbalWind
 
         public void OnDestroy()
         {
-            GameEvents.onHideUI.Remove(OnHideUI);
-            GameEvents.onShowUI.Remove(OnShowUI);
-
-            if (toolbarButton != null)
-                toolbarButton.Destroy();
-
             SaveSettings();
+            TearDownToolbars();
         }
 
 
-        void OnHideUI()
+        protected override  void OnGuiVisibilityChange()
         {
-            enableThroughGuiEvent = false;
-            isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
-        }
-
-
-        void OnShowUI()
-        {
-            enableThroughGuiEvent = true;
-            isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
+            isWindowOpen = isGuiVisible;
         }
 
 
@@ -381,9 +361,10 @@ namespace KerbalWind
         {
             ConfigNode settings = new ConfigNode();
             settings.name = "KERBAL_WIND_SETTINGS";
+            SaveMutableToolbarSettings(settings);
+            SaveImmutableToolbarSettings(settings);
             settings.AddValue("windowRect.xMin", windowRect.xMin);
             settings.AddValue("windowRect.yMin", windowRect.yMin);
-            settings.AddValue("enableThroughToolbar", enableThroughToolbar);
             settings.AddValue("windDirectionId", windDirectionId);
             settings.AddValue("windSpdGuiState", windSpdGuiState);
             settings.AddValue("gustsSeverity", gustsSeverityGuiState);
@@ -393,16 +374,15 @@ namespace KerbalWind
 
         void LoadSettings()
         {
-            ConfigNode settings = new ConfigNode();
-            settings = ConfigNode.Load(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
+            ConfigNode settings = ConfigNode.Load(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
             if (settings != null)
             {
                 float x = windowRect.xMin, y = windowRect.yMin; // making structs immutable sure was a good idea ...
                 Util.TryReadValue(ref x, settings, "windowRect.xMin");
                 Util.TryReadValue(ref y, settings, "windowRect.xMin");
                 windowRect = new Rect(x, y, windowRect.width, windowRect.height); // it's so much safer and reduces the amount of awkward code one has to write ... 
-                Util.TryReadValue(ref enableThroughToolbar, settings, "enableThroughToolbar");
-                isWindowOpen = enableThroughGuiEvent && enableThroughToolbar;
+                LoadMutableToolbarSettings(settings);
+                LoadImmutableToolbarSettings(settings);
                 Util.TryReadValue(ref windDirectionId, settings, "windDirectionId");
                 Util.TryReadValue(ref windSpdGuiState, settings, "windSpdGuiState");
                 Util.TryReadValue(ref gustsSeverityGuiState, settings, "gustsSeverity");

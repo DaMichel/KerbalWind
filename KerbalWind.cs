@@ -126,6 +126,8 @@ namespace KerbalWind
             const float LENGTH_SCALE_THOUSANDFT = 300f;
             const float LOW_ALTITUDE_THRESHOLD = 300f;
             const float M_TO_FEET = 3.28084f;
+            if (altitude_above_ground < 0f)
+                altitude_above_ground = 0f; // because the length scales Lu,v,w are proportional to it.
             float h = altitude_above_ground * M_TO_FEET;
             if (altitude_above_ground < LOW_ALTITUDE_THRESHOLD)
             {
@@ -491,10 +493,17 @@ namespace KerbalWind
         //Called by FAR. Returns wind vector.
         public Vector3 GetTheWind(CelestialBody body, Part part, Vector3 position)
         {
-            if (part && part.vessel == FlightGlobals.ActiveVessel)
-                return windVectorWS + gustsVectorWS;
+            if (part.partBuoyancy && part.partBuoyancy.splashed)
+            {
+                return Vector3.zero;
+            }
             else
-                return windVectorWS;
+            {
+                if (part && part.vessel == FlightGlobals.ActiveVessel)
+                    return windVectorWS + gustsVectorWS;
+                else
+                    return windVectorWS;
+            }
         }
 
 

@@ -493,13 +493,13 @@ namespace KerbalWind
         //Called by FAR. Returns wind vector.
         public Vector3 GetTheWind(CelestialBody body, Part part, Vector3 position)
         {
-            if (part.partBuoyancy && part.partBuoyancy.splashed)
+            if (!part || (part.partBuoyancy && part.partBuoyancy.splashed))
             {
                 return Vector3.zero;
             }
             else
             {
-                if (part && part.vessel == FlightGlobals.ActiveVessel)
+                if (part.vessel == FlightGlobals.ActiveVessel)
                     return windVectorWS + gustsVectorWS;
                 else
                     return windVectorWS;

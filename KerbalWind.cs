@@ -31,10 +31,13 @@ THE SOFTWARE.
 
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using KSP.IO;
 using System.Reflection;
+using KRPC.Service;
+using KRPC.Service.Attributes;
 
 
 namespace KerbalWind
@@ -75,6 +78,58 @@ namespace KerbalWind
     /* https://en.wikipedia.org/wiki/Continuous_gusts
      * for now neglecting altitude dependence
      */
+
+    [KRPCService]
+    public static class Wind
+    {
+        public static bool Manual;
+        public static bool wind;
+        public static Vector3 windD;
+        public static float wspd;
+        public static bool update;
+        [KRPCProperty]
+        public static IDictionary<string, float> Direction
+        {
+            get
+            {
+                IDictionary<string, float> newDict = new Dictionary<string, float>();
+                newDict.Add("x", windD.x);
+                newDict.Add("y", windD.y);
+                newDict.Add("z", windD.z);
+                return newDict;
+            }
+            set
+            {
+                windD.x = value["x"];
+                windD.y = value["y"];
+                windD.z = value["z"];
+                Manual = true;
+                update = true;
+            }
+        }
+        [KRPCProperty]
+        public static float WindSpeed
+        {
+            get => wspd;
+            set {
+                wspd = value;
+                Manual = true;
+                update = true;
+            }
+        }
+        [KRPCProperty]
+        public static bool IsWind
+        {
+            get => wind;
+            set
+            {
+                wind = value;
+                Manual = true;
+                update = true;
+            }
+        }
+    }
+
     class ContinuousGustsModel
     {
         // directions:
@@ -467,6 +522,10 @@ namespace KerbalWind
                 windVectorWS = mSurfaceToWorld * windVector;
                 if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null)
                 {
+                    if (Wind.update){
+                        ComputeWindVector();
+                        Wind.update = false;
+                    }
                     Vessel vessel = FlightGlobals.ActiveVessel;
                     Vector3 vehicle_velocity = vessel.srf_velocity;
                     double radarAltitude = vessel.altitude - Math.Max(0, vessel.terrainAltitude); // terrainAltitude is the deviation of the terrain from the sea level.
@@ -511,63 +570,69 @@ namespace KerbalWind
         {
             // X = north, consistent with vessel axes where x points north for vessels on the KSC runway pointing east
             // Z = east
-            windDirection = Vector3.zero;
-            windDirLabel = "x";
-            windEnabled  = true;
-            //string dirLabel2 = "";
-            switch (windDirectionId)
-            {
-                case 4:
-                    windEnabled = false;
-                    break;
-                case 7: // S
-                    windDirection.x = -1;
-                    windDirLabel = "\u2193";
-                    //dirLabel2  = "N";
-                    break;
-                case 3: // W
-                    windDirection.z = -1;
-                    windDirLabel = "\u2190";
-                    //dirLabel2  = "E";
-                    break;
-                case 1: // N
-                    windDirection.x = 1;
-                    windDirLabel = "\u2191";
-                    //dirLabel2 = "S";
-                    break;
-                case 5: // E
-                    windDirection.z = 1;
-                    windDirLabel = "\u2192";
-                    //dirLabel2 = "W";
-                    break;
-                case 6: // SW
-                    windDirection.z = -1;
-                    windDirection.x = -1;
-                    windDirLabel = "\u2199";
-                    //dirLabel2 = "NE";
-                    break;
-                case 0: // NW
-                    windDirection.z = -1;
-                    windDirection.x = 1;
-                    windDirLabel = "\u2196";
-                    //dirLabel2 = "SE";
-                    break;
-                case 2: // NE
-                    windDirection.z = 1;
-                    windDirection.x = 1;
-                    windDirLabel = "\u2197";
-                    //dirLabel2 = "SW";
-                    break;
-                case 8: // SE
-                    windDirection.z = 1;
-                    windDirection.x = -1;
-                    windDirLabel = "\u2198";
-                    //dirLabel2 = "NW";
-                    break;
+            if (!Wind.wind) {
+                windDirection = Vector3.zero;
+                windDirLabel = "x";
+                windEnabled = true;
+                //string dirLabel2 = "";
+                switch (windDirectionId)
+                {
+                    case 4:
+                        windEnabled = false;
+                        break;
+                    case 7: // S
+                        windDirection.x = -1;
+                        windDirLabel = "\u2193";
+                        //dirLabel2  = "N";
+                        break;
+                    case 3: // W
+                        windDirection.z = -1;
+                        windDirLabel = "\u2190";
+                        //dirLabel2  = "E";
+                        break;
+                    case 1: // N
+                        windDirection.x = 1;
+                        windDirLabel = "\u2191";
+                        //dirLabel2 = "S";
+                        break;
+                    case 5: // E
+                        windDirection.z = 1;
+                        windDirLabel = "\u2192";
+                        //dirLabel2 = "W";
+                        break;
+                    case 6: // SW
+                        windDirection.z = -1;
+                        windDirection.x = -1;
+                        windDirLabel = "\u2199";
+                        //dirLabel2 = "NE";
+                        break;
+                    case 0: // NW
+                        windDirection.z = -1;
+                        windDirection.x = 1;
+                        windDirLabel = "\u2196";
+                        //dirLabel2 = "SE";
+                        break;
+                    case 2: // NE
+                        windDirection.z = 1;
+                        windDirection.x = 1;
+                        windDirLabel = "\u2197";
+                        //dirLabel2 = "SW";
+                        break;
+                    case 8: // SE
+                        windDirection.z = 1;
+                        windDirection.x = -1;
+                        windDirLabel = "\u2198";
+                        //dirLabel2 = "NW";
+                        break;
+                }
+                windDirection.Normalize();
+                windSpd = Util.Floor(windSpdGuiState, 0); // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
+            }else{
+                windDirection = Wind.windD;
+                windSpd = Wind.wspd;
+                windEnabled = Wind.wind;
             }
-            windDirection.Normalize();
-            windSpd = Util.Floor(windSpdGuiState, 0); // round to next greater integer so we go relatively slowly in 1m/s steps while the MB is down.
-            windVector = windSpd*windDirection;
+            windVector = windSpd * windDirection;
             gustsmodel.Init(Util.Floor(gustsSeverityGuiState,1));
         }
 
@@ -629,14 +694,15 @@ namespace KerbalWind
                 //string[] selStrings = new String[] {"", "", "", "", windDirLabel, "", "", "", ""};
                 selStrings[windDirectionId] = windDirLabel;
                 windDirectionId = GUILayout.SelectionGrid(windDirectionId, selStrings, 3);
-                if (windDirectionId != oldWindDirectionNumb) 
+            if (windDirectionId != oldWindDirectionNumb) 
                 {
                     needsUpdate = true;
                 }
-                if (needsUpdate)
+            if (needsUpdate)
                 {
                     ComputeWindVector();
                     needsUpdate = false;
+                    Wind.update = false;
                 }
 
                 //if (windDirectionId==DIRECTION_DIAL_NO_WIND)

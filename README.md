@@ -1,13 +1,13 @@
 Kerbal Wind
 ========================================
 Provides a GUI for wind speed settings and implements a [continuous-gusts](https://en.wikipedia.org/wiki/Continuous_gusts) model.
-The settings are wind direction, speed and turbulence magnitude.
+The settings are median speed, gust duration and gust strength.
 
-Forum Thread: http://forum.kerbalspaceprogram.com/threads/107989
+Forum Thread: 
 
-Source Code: https://github.com/DaMichel/KerbalWind
+Source Code: https://github.com/RCrockford/KerbalWind
 
-![alt text](https://github.com/DaMichel/KerbalWind/raw/master/misc/kerbalwind.jpg "Screenshot")
+![alt text](https://github.com/RCrockford/KerbalWind/raw/master/misc/kerbalwind.jpg "Screenshot")
 
 ##### Dependencies
 Required: Ferram Aerospace Research
@@ -15,7 +15,14 @@ Required: Ferram Aerospace Research
 Optional: Toolbar
 
 ##### Authors
-DaMichel, silverfox8124
+RCrockford, DaMichel, silverfox8124
+
+##### Weather modelling
+Weather modelling is based on the current save game seed, location and time.
+Weather updates every twenty minutes of game time, or every 0.25 degrees of
+latitude or longitude.
+Winds speeds are modelled using a [Rayleigh distribution](https://en.wikipedia.org/wiki/Rayleigh_distribution).
+Wind speeds are also affected by altitude, using a simple altitude based model.
 
 ##### On the gusts model
 It is a partial implementation of random processes described by 
@@ -58,6 +65,8 @@ for instance, that roll inducing forces due to uneven lift are not accounted for
 I hope to correct this eventually.
 
 ##### Credits
+RCrockford added weather system modelling and gust improvements to DaMichel's
+original wind mod.  
 DaMichel started off with some code from KerbalWeatherSystem courtesy of
 SilverFox8124 for which I want to thank him. Also much thanks goes to Ippo343
 for writing the FAR patch that lets you add wind, and Ferram4 for
@@ -69,7 +78,7 @@ creators of derivative work must give credit to silverfox8124 and DaMichel.
 
 -----------------------------------
 
-Copyright (c) 2015 DaMichel, silverfox8124
+Copyright (c) 2020 RCrockford, DaMichel, silverfox8124
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

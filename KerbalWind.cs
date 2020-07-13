@@ -120,6 +120,7 @@ key = 120 1.5 0 0
         float Lu, Lv, Lw;    // length scales
         float sigma_u, sigma_v, sigma_w;  // standard deviation
         Vector3 output = Vector3.zero;
+        float turbSev = 0f;
         System.Random rand = new System.Random();
 
         FloatCurve LightTurbulence;
@@ -142,6 +143,14 @@ key = 120 1.5 0 0
             get 
             {
                 return output;
+            }
+        }
+
+        public float turbulenceSev
+        {
+            get
+            {
+                return turbSev;
             }
         }
 
@@ -261,9 +270,11 @@ key = 120 1.5 0 0
 
                 Lu = LENGTH_SCALE_THOUSANDFT;
                 Lv = Lw = 0.5f * Lu;
-                sigma_u = Mathf.Max(turbulence_severity, 0.1f);
+                sigma_u = Mathf.Max(turbulence_severity, 0.01f);
                 sigma_v = sigma_w = sigma_u;
             }
+
+            turbSev = turbulence_severity;
             // standard deviation of wind speed is about 0.1 * W20. W20 is the wind speed at 20 ft.
         }
 
@@ -327,11 +338,14 @@ key = 120 1.5 0 0
 
         public void Update(float dt, Vector3 wind_velocity, Vector3 vehicle_velocity, float altitude, float altitude_above_ground)
         {
-
-
             ComputeProcessParameters(altitude, altitude_above_ground, wind_velocity.magnitude);
             float tas = (wind_velocity + vehicle_velocity).magnitude; // the true air speed
             float T = dt * tas; // distance traveled within the frozen turbulence field
+
+            // Slight fudge for slow moving craft - limit T such that T / L is always at least 0.1 to avoid "sticky" state
+            // Because the evolution of Y_v_state etc is proportional to L/(T+L) for very small T this evolution can become
+            // too small resulting in excessive gusts at low speed if the craft previously travelled at high speed (e.g. reentry).
+            T = Mathf.Max(T, Lv * 0.1f);
 
             Y_u = ComputeProcess(T, Lu, Y_u);
             Y_v = ComputeLateralProcess(T, Lv, Y_v, ref Y_v_state);
@@ -360,9 +374,11 @@ key = 120 1.5 0 0
         // gui stuff
         float       medianWindSpdGuiState = 0.0f; // the value that is being increased when you hit the +/- buttons
         float       medianWindSpd = 0.0f;
-        float       gustDurationGuiState = 5f;
         string      windSpdLabel = "";
+        float       gustDurationGuiState = 2f;
         string      gustDurationLabel = "";
+        float       gustStrengthGuiState = 2f;
+        string      gustStrengthLabel = "";
         string      windDirLabel = "x";
         string      windowTitle  = "";
         bool        needsUpdate = true;
@@ -509,7 +525,6 @@ key = 120 1.5 0 0
             isWindowOpen = isGuiVisible;
         }
 
-
         void SaveSettings()
         {
             ConfigNode settings = new ConfigNode();
@@ -520,6 +535,7 @@ key = 120 1.5 0 0
             settings.AddValue("windowRect.yMin", windowRect.yMin);
             settings.AddValue("windSpdGuiState", medianWindSpdGuiState);
             settings.AddValue("gustDurationGuiState", gustDurationGuiState);
+            settings.AddValue("gustStrengthGuiState", gustStrengthGuiState);
             settings.Save(AssemblyLoader.loadedAssemblies.GetPathByType(typeof(KerbalWind)) + "/settings.cfg");
         }
 
@@ -537,10 +553,12 @@ key = 120 1.5 0 0
                 LoadImmutableToolbarSettings(settings);
                 Util.TryReadValue(ref medianWindSpdGuiState, settings, "windSpdGuiState");
                 Util.TryReadValue(ref gustDurationGuiState, settings, "gustDurationGuiState");
+                Util.TryReadValue(ref gustStrengthGuiState, settings, "gustStrengthGuiState");
             }
             medianWindSpd = Util.Floor(medianWindSpdGuiState, 1); // round to 1 d.p. so we go relatively slowly in 0.1m/s steps while the MB is down.
             windSpdLabel = medianWindSpd.ToString("F1");
             gustDurationLabel = gustDurationGuiState.ToString("F1");
+            gustStrengthLabel = gustStrengthGuiState.ToString("F1");
         }
         #endregion
 
@@ -627,46 +645,56 @@ key = 120 1.5 0 0
                 if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null)
                 {
                     Vessel vessel = FlightGlobals.ActiveVessel;
-                    double radarAltitude = vessel.altitude - Math.Max(0, vessel.terrainAltitude); // terrainAltitude is the deviation of the terrain from the sea level.
-                    altitudeMul = gustsmodel.altMultiplier((float)radarAltitude);
-                    windVectorWS *= altitudeMul;
 
-                    double UT = Planetarium.GetUniversalTime();
-                    gustStart = Math.Min(gustStart, UT);
-                    if ((UT - gustStart) >= gustDuration)
+                    if (FlightGlobals.ActiveVessel.atmDensity <= 0d)
                     {
-                        // New gust
-                        float dt = Time.deltaTime;
-                        Vector3 vehicle_velocity = vessel.srf_velocity;
-                        gustsmodel.Update(dt, windVectorWS, vehicle_velocity, (float)vessel.altitude, (float)radarAltitude);
-                        Vector3 Yuvw = gustsmodel.gustMagnitude;
-                        newGustsVectorWS = Yuvw[0] * windDirection;
-                        newGustsVectorWS += Yuvw[2] * vessel.upAxis;
-                        newGustsVectorWS += Yuvw[1] * Vector3.Cross(windDirection, vessel.upAxis);
-                        oldGustsVectorWS = currentGustsVectorWS;
-
-                        // 25% variance on duration
-                        gustDuration = gustDurationGuiState + gustsmodel.randGauss() * gustDurationGuiState * 0.25;
-                        // blend is approxiamtely 25% of of gust
-                        gustBlendDuration = (gustDurationGuiState + gustsmodel.randGauss() * gustDurationGuiState * 0.25) * 0.25;
-
-                        // Gusts are shorter when the vessel is moving quickly (because you're flying through different air flows)
-                        double speedFactor = Mathf.Clamp(100.0f / vehicle_velocity.magnitude, 0.1f, 2f);
-                        gustDuration *= speedFactor;
-                        gustBlendDuration *= speedFactor;
-
-                        gustStart = UT;
-                        gustBlendStart = UT;
+                        windVectorWS = Vector3.zero;
+                        currentGustsVectorWS = Vector3.zero;
                     }
-                    
-                    if (gustBlendDuration > 0d)
+                    else
                     {
-                        gustBlendStart = Math.Min(gustBlendStart, UT);
-                        float t = (float)((UT - gustBlendStart) / gustBlendDuration);
-                        t = Mathf.Clamp01(t);
-                        currentGustsVectorWS = oldGustsVectorWS + (newGustsVectorWS - oldGustsVectorWS) * t;
-                        if (t >= 1f)
-                            gustBlendDuration = 0f;
+                        double radarAltitude = vessel.altitude - Math.Max(0, vessel.terrainAltitude); // terrainAltitude is the deviation of the terrain from the sea level.
+                        altitudeMul = gustsmodel.altMultiplier((float)radarAltitude);
+                        windVectorWS *= altitudeMul;
+
+                        double UT = Planetarium.GetUniversalTime();
+                        gustStart = Math.Min(gustStart, UT);
+                        if ((UT - gustStart) >= gustDuration)
+                        {
+                            // New gust
+                            float dt = Time.deltaTime;
+                            Vector3 vehicle_velocity = vessel.srf_velocity;
+                            gustsmodel.Update(dt, windVectorWS, vehicle_velocity, (float)vessel.altitude, (float)radarAltitude);
+                            Vector3 Yuvw = gustsmodel.gustMagnitude;
+                            newGustsVectorWS = Yuvw[0] * windDirection;
+                            newGustsVectorWS += Yuvw[2] * vessel.upAxis;
+                            newGustsVectorWS += Yuvw[1] * Vector3.Cross(windDirection, vessel.upAxis);
+                            newGustsVectorWS *= Mathf.Max(0.5f, gustStrengthGuiState);
+                            oldGustsVectorWS = currentGustsVectorWS;
+
+                            // 25% variance on duration
+                            gustDuration = gustDurationGuiState + gustsmodel.randGauss() * gustDurationGuiState * 0.25;
+                            // blend is approxiamtely 10% of of gust
+                            gustBlendDuration = (gustDurationGuiState + gustsmodel.randGauss() * gustDurationGuiState * 0.25) * 0.1;
+
+                            // Gusts are shorter when the vessel is moving quickly (because you're flying through different air flows)
+                            double speedFactor = Mathf.Clamp(100.0f / vehicle_velocity.magnitude, 0.05f, 2f);
+                            gustDuration *= speedFactor;
+                            gustBlendDuration *= speedFactor;
+
+                            gustStart = UT;
+                            gustBlendStart = UT;
+                        }
+
+                        if (gustBlendDuration > 0d)
+                        {
+                            gustBlendStart = Math.Min(gustBlendStart, UT);
+                            float t = (float)((UT - gustBlendStart) / gustBlendDuration);
+                            t = Mathf.Clamp01(t);
+                            currentGustsVectorWS = oldGustsVectorWS + (newGustsVectorWS - oldGustsVectorWS) * t;
+                            if (t >= 1f)
+                                gustBlendDuration = 0f;
+                        }
                     }
                 }
                 else
@@ -700,7 +728,7 @@ key = 120 1.5 0 0
         }
 
         // Summed simplex noise across multiple octaves
-        private double CalculateSimplexNoise(double x, double y, double z, uint octaves, double persistance, double ystep, double zlacunarity)
+        private double CalculateSimplexNoise(double x, double y, double z, uint octaves, double persistance, double lacunarity)
         {
             double noise = 0d;
             double maxAmp = 0.5;
@@ -710,8 +738,9 @@ key = 120 1.5 0 0
             {
                 noise += simplexNoise.Noise3_XYBeforeZ(x, y, z) * amp;
                 maxAmp += amp * 0.5;    // This gives a slightly wider spread, which avoids multi-octave noise tending towards the centre excessively.
-                y += ystep;
-                z *= zlacunarity;
+                x *= lacunarity;
+                y *= lacunarity;
+                z *= lacunarity;
                 amp *= persistance;
             }
 
@@ -749,26 +778,27 @@ key = 120 1.5 0 0
         {
             float lat = float.NaN;
             float lng = float.NaN;
+            float latlngStep = 0.25f;
 
             if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && FlightGlobals.ActiveVessel != null &&
                 FlightGlobals.ActiveVessel.mainBody == FlightGlobals.GetHomeBody())
             {
                 Vessel vessel = FlightGlobals.ActiveVessel;
-                lat = Util.Floor((float)vessel.latitude, 0);
-                lng = Util.Floor((float)vessel.longitude, 0);
+                lat = Mathf.Floor((float)vessel.latitude / latlngStep) * latlngStep;
+                lng = Mathf.Floor((float)vessel.longitude / latlngStep) * latlngStep;
             }
             else if (SpaceCenter.Instance != null)
             {
                 PQSCity ksc = FindKSC(FlightGlobals.GetHomeBody());
                 if (ksc)
                 {
-                    lat = Util.Floor((float)ksc.lat, 0);
-                    lng = Util.Floor((float)ksc.lon, 0);
+                    lat = Mathf.Floor((float)ksc.lat / latlngStep) * latlngStep;
+                    lng = Mathf.Floor((float)ksc.lon / latlngStep) * latlngStep;
                 }
                 else
                 {
-                    lat = Util.Floor((float)SpaceCenter.Instance.Latitude, 0);
-                    lng = Util.Floor((float)SpaceCenter.Instance.Longitude, 0);
+                    lat = Mathf.Floor((float)SpaceCenter.Instance.Latitude / latlngStep) * latlngStep;
+                    lng = Mathf.Floor((float)SpaceCenter.Instance.Longitude / latlngStep) * latlngStep;
                 }
             }
 
@@ -784,7 +814,8 @@ key = 120 1.5 0 0
                 {
                     medianWindSpd = Util.Floor(medianWindSpdGuiState, 1); // round to 1 d.p. so we go relatively slowly in 0.1m/s steps while the MB is down.
                     blendStart = UT;
-                    blendDuration = 5d;
+                    if (HighLogic.LoadedSceneIsFlight && currentWindDir >= 0f)
+                        blendDuration = 5d;
                     weatherLat = lat;
                     weatherLng = lng;
                     weatherTime = gameTime;
@@ -800,7 +831,8 @@ key = 120 1.5 0 0
                     float noiseTime = weatherTime * 0.002f;
 
                     // simplex noise generated speed 3 octaves respectively.
-                    float speedSample = (float)CalculateSimplexNoise(weatherLat * 0.1f, weatherLng * 0.1f, noiseTime, 3, 0.25, 50d, 8d);
+                    const float speedFreq = 0.1f;
+                    float speedSample = (float)CalculateSimplexNoise(weatherLat * speedFreq, weatherLng * speedFreq, noiseTime, 3, 0.25, 8d);
                     speedSample = speedSample * 0.5f + 0.5f;
                     // Because the distribution used is not bounded on the upper end, this needs to be clamped to avoid NaNs.
                     speedSample = Mathf.Clamp(speedSample, 0f, 0.9999f);
@@ -810,25 +842,31 @@ key = 120 1.5 0 0
                     newWindSpeed = Mathf.Sqrt(-2f * sigmasq * Mathf.Log(1f - speedSample));
 
                     // direction is generated from the curl of the noise field, using the finite differences method.
-                    float epsilon = 0.001f;
-                    Vector2 dir = new Vector2((float)CalculateSimplexNoise(weatherLat * 0.1f + 10f, weatherLng * 0.1f - epsilon, noiseTime, 2, 0.2, 50d, 8d) -
-                        (float)CalculateSimplexNoise(weatherLat * 0.1f + 10f, weatherLng * 0.1f + epsilon, noiseTime, 2, 0.2, 50d, 8d),
-                        (float)CalculateSimplexNoise(weatherLat * 0.1f + 10f + epsilon, weatherLng * 0.1f, noiseTime, 2, 0.2, 50d, 8d) -
-                        (float)CalculateSimplexNoise(weatherLat * 0.1f + 10f - epsilon, weatherLng * 0.1f, noiseTime, 2, 0.2, 50d, 8d));
+                    const float dirFreq = 0.05f;
+                    const float epsilon = dirFreq * 0.01f;
+                    Vector2 dir = new Vector2((float)CalculateSimplexNoise(weatherLat * dirFreq + 10f, weatherLng * dirFreq - epsilon, noiseTime, 2, 0.2, 8d) -
+                        (float)CalculateSimplexNoise(weatherLat * dirFreq + 10f, weatherLng * dirFreq + epsilon, noiseTime, 2, 0.2, 8d),
+                        (float)CalculateSimplexNoise(weatherLat * dirFreq + 10f + epsilon, weatherLng * dirFreq, noiseTime, 2, 0.2, 8d) -
+                        (float)CalculateSimplexNoise(weatherLat * dirFreq + 10f - epsilon, weatherLng * dirFreq, noiseTime, 2, 0.2, 8d));
                     dir.Normalize();
 
                     // Direction is just the direction the vector points in.
-                    newWindDir = Mathf.Acos(dir.y);
+                    newWindDir = Mathf.Acos(dir.y) * Mathf.Rad2Deg;
                     if (dir.x < 0)
-                        newWindDir = 2f * Mathf.PI - newWindDir;
+                        newWindDir = 360f - newWindDir;
 
                     oldWindSpeed = currentWindSpeed;
                     oldWindDir = currentWindDir;
 
-                    // Snap to wind direction on scene load, but blend speed.
-                    if (currentWindDir < 0f)
+                    // Snap to settings in the space centre.
+                    if (blendDuration <= 0f)
                     {
-                        oldWindDir = newWindDir;
+                        currentWindSpeed = newWindSpeed;
+                        currentWindDir = newWindDir;
+                        if (currentWindDir > 360f)
+                            currentWindDir -= 360f;
+                        if (currentWindDir < 0f)
+                            currentWindDir += 360f;
                     }
                 }
 
@@ -837,7 +875,11 @@ key = 120 1.5 0 0
                     blendStart = Math.Min(blendStart, UT);
                     float t = (float)((UT - blendStart) / blendDuration);
                     currentWindSpeed = Mathf.Lerp(oldWindSpeed, newWindSpeed, t);
-                    currentWindDir = Mathf.Lerp(oldWindDir, newWindDir, t);
+                    currentWindDir = Mathf.LerpAngle(oldWindDir, newWindDir, t);
+                    if (currentWindDir > 360f)
+                        currentWindDir -= 360f;
+                    if (currentWindDir < 0f)
+                        currentWindDir += 360f;
                     if (t >= 1f)
                         blendDuration = 0f;
                     update = true;
@@ -857,7 +899,7 @@ key = 120 1.5 0 0
         {
             // X = north, consistent with vessel axes where x points north for vessels on the KSC runway pointing east
             // Z = east
-            windDirection = new Vector3(-Mathf.Cos(currentWindDir), 0f, -Mathf.Sin(currentWindDir));
+            windDirection = new Vector3(-Mathf.Cos(currentWindDir * Mathf.Deg2Rad), 0f, -Mathf.Sin(currentWindDir * Mathf.Deg2Rad));
             windEnabled  = true;
             windVector = currentWindSpeed * windDirection;
             gustsmodel.Init();
@@ -881,7 +923,7 @@ key = 120 1.5 0 0
 
         void OnGUI()
         {
-            if (isWindowOpen)
+            if (isWindowOpen && buttonVisible)
             {
                 //Debug.Log(String.Format("KerbalWind window @{0},{1}, size: {2},{3}", windowRect.xMin, windowRect.yMin, windowRect.width, windowRect.height));
                 GUI.skin = this.skin;
@@ -951,10 +993,16 @@ key = 120 1.5 0 0
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(4);
+                GUILayout.Label("Gust Strength", GUILayout.ExpandWidth(true));
+                GUILayout.BeginHorizontal();
+                    MakeNumberEditField(ref gustStrengthLabel, ref gustStrengthGuiState, ref gustUpdate, 1);
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(4);
                     GUILayout.Label("Weather", GUILayout.ExpandWidth(true));
                 GUILayout.BeginHorizontal();
-                    GUILayout.Box(windEnabled ? $"{currentWindSpeed:F1} m/s" : "None", GUILayout.MinWidth(70));
-                    GUILayout.Box(windEnabled ? $"{currentWindDir * Mathf.Rad2Deg:F0}° {windDirLabel}" : "", GUILayout.MinWidth(70));
+                    GUILayout.Box(windEnabled ? $"{currentWindSpeed:F1} m/s" : "None", GUILayout.MinWidth(80));
+                    GUILayout.Box(windEnabled ? $"{currentWindDir:F0}° {windDirLabel}" : "", GUILayout.MinWidth(80));
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(2);
@@ -991,8 +1039,8 @@ key = 120 1.5 0 0
                 else
                     GUILayout.Box("<color=#e07000>Severe turbulence</color>", GUILayout.ExpandWidth(true));
 
-
-                GUILayout.Space(4);
+#if false
+            GUILayout.Space(4);
                 GUILayout.Label("WindVec", GUILayout.ExpandWidth(true));
                 GUILayout.BeginHorizontal();
                     GUILayout.Box(windDirection.x.ToString("F3"), GUILayout.MinWidth(40));
@@ -1011,9 +1059,9 @@ key = 120 1.5 0 0
             GUILayout.Space(2);
             GUILayout.Label("Dir", GUILayout.ExpandWidth(true));
             GUILayout.BeginHorizontal();
-            GUILayout.Box((oldWindDir * Mathf.Rad2Deg).ToString("F1"), GUILayout.MinWidth(40));
-            GUILayout.Box((currentWindDir * Mathf.Rad2Deg).ToString("F1"), GUILayout.MinWidth(40));
-            GUILayout.Box((newWindDir * Mathf.Rad2Deg).ToString("F1"), GUILayout.MinWidth(40));
+            GUILayout.Box(oldWindDir.ToString("F1"), GUILayout.MinWidth(40));
+            GUILayout.Box(currentWindDir.ToString("F1"), GUILayout.MinWidth(40));
+            GUILayout.Box(newWindDir.ToString("F1"), GUILayout.MinWidth(40));
             GUILayout.EndHorizontal();
 
             GUILayout.Space(2);
@@ -1024,12 +1072,12 @@ key = 120 1.5 0 0
             GUILayout.EndHorizontal();
 
             GUILayout.Space(2);
-            GUILayout.Label("Alt / Blend", GUILayout.ExpandWidth(true));
+            GUILayout.Label("Alt / Turb", GUILayout.ExpandWidth(true));
             GUILayout.BeginHorizontal();
-            GUILayout.Box(altitudeMul.ToString("F2"), GUILayout.MinWidth(40));
-            GUILayout.Box(blendDuration > 0f ? ((Planetarium.GetUniversalTime() - blendStart) / blendDuration).ToString("F2") : "1.00", GUILayout.MinWidth(40));
+            GUILayout.Box(altitudeMul.ToString("F2"), GUILayout.MinWidth(60));
+            GUILayout.Box(gustsmodel.turbulenceSev.ToString("F3"), GUILayout.MinWidth(60));
             GUILayout.EndHorizontal();
-
+#endif
             GUILayout.EndVertical();
             GUI.DragWindow();
         }

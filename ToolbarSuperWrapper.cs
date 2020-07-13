@@ -34,6 +34,11 @@ public abstract class PluginWithToolbarSupport : UnityEngine.MonoBehaviour
         get { return visibleByKspGui && visibleByToolbars; }
     }
 
+    protected bool buttonVisible
+    {
+        get { return applauncherButton.isActiveAndEnabled; }
+    }
+
     protected abstract void OnGuiVisibilityChange();
 
     protected void SaveImmutableToolbarSettings(ConfigNode node)
@@ -112,7 +117,7 @@ public abstract class PluginWithToolbarSupport : UnityEngine.MonoBehaviour
         {
             ToolbarInfo tb = GetToolbarInfo();
             var m = new System.Collections.Generic.Dictionary<GameScenes, AppScenes>();
-            m.Add(GameScenes.FLIGHT, AppScenes.FLIGHT);
+            m.Add(GameScenes.FLIGHT, AppScenes.FLIGHT | AppScenes.MAPVIEW);
             m.Add(GameScenes.EDITOR, AppScenes.SPH | AppScenes.VAB);
             m.Add(GameScenes.SPACECENTER, AppScenes.SPACECENTER);
             // and so on ...
